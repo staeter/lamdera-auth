@@ -1,11 +1,14 @@
 module Types exposing (..)
 
+import Auth.Common
 import Browser
 import Browser.Navigation as Nav
-import Url exposing (Url)
-import Auth.Common
 import Dict exposing (Dict)
 import Lamdera
+import Set exposing (Set)
+import Time
+import Url exposing (Url)
+
 
 type alias FrontendModel =
     { key : Nav.Key
@@ -14,16 +17,25 @@ type alias FrontendModel =
     , authRedirectBaseUrl : Url
     }
 
-type alias User =
-    { auth : Auth
-    }
 
 type Auth
     = Basic
     | Admin
 
+
+type alias User =
+    { name : String
+    }
+
+
+type alias UserId =
+    String
+
+
 type alias BackendModel =
-    { message : String
+    { time : Time.Posix
+    , users : Dict UserId User
+    , clients : Dict SessionId ( Maybe UserId, Dict ClientId Time.Posix )
     , pendingAuths : Dict Lamdera.SessionId Auth.Common.PendingAuth
     }
 
@@ -42,7 +54,11 @@ type ToBackend
 
 type BackendMsg
     = NoOpBackendMsg
+    | Tick Time.Posix
+    | ClientConnect Lamdera.SessionId Lamdera.ClientId
+    | ClientDisconnect Lamdera.SessionId Lamdera.ClientId
     | AuthBackendMsg Auth.Common.BackendMsg
+
 
 type ToFrontend
     = NoOpToFrontend
