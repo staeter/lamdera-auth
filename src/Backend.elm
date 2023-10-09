@@ -42,8 +42,8 @@ update msg model =
         NoOpBackendMsg ->
             ( model, Cmd.none )
 
-        Tick time ->
-            ( { model | time = time }, Cmd.none )
+        Tick now ->
+            ( { model | now = now }, Cmd.none )
 
         ClientConnect sessionId clientId ->
             Dict.update
@@ -51,13 +51,13 @@ update msg model =
                 (\val ->
                     case val of
                         Nothing ->
-                            ( Nothing, Dict.singleton clientId model.time ) |> Just
+                            ( LoggedOut, Dict.singleton clientId model.now ) |> Just
 
                         Just ( user, clientDict ) ->
-                            ( user, Dict.insert clientId model.time clientDict ) |> Just
+                            ( user, Dict.insert clientId model.now clientDict ) |> Just
                 )
-                model.clients
-                |> (\clients -> { model | clients = clients })
+                model.sessions
+                |> (\sessions -> { model | sessions = sessions })
                 |> (\model -> ( model, Cmd.none ))
 
         ClientDisconnect sessionId clientId ->
@@ -66,7 +66,7 @@ update msg model =
                 (Maybe.map
                     (\val ->
                         case val of
-                            ( Nothing, clientDict ) ->
+                            ( LoggedOut, clientDict ) ->
                                 let
                                     newClientDict =
                                         Dict.remove clientId clientDict
@@ -75,18 +75,18 @@ update msg model =
                                     Nothing
 
                                 else
-                                    Just ( Nothing, newClientDict )
+                                    Just ( LoggedOut, newClientDict )
 
-                            ( Just user, clientDict ) ->
-                                ( user, Dict.remove clientId clientDict ) |> Just
+                            ( loggedIn, clientDict ) ->
+                                ( loggedIn, Dict.remove clientId clientDict ) |> Just
                     )
                 )
-                model.clients
-                |> (\clients -> { model | clients = clients })
+                model.sessions
+                |> (\sessions -> { model | sessions = sessions })
                 |> (\model -> ( model, Cmd.none ))
 
         AuthBackendMsg authMsg ->
-            Auth.Flow.backendUpdate Auth.backendUpdateConfig authMsg
+            Auth.Flow.backendUpdate Auth.backendConfig authMsg
 
 
 updateFromFrontend : SessionId -> ClientId -> ToBackend -> Model -> ( Model, Cmd BackendMsg )

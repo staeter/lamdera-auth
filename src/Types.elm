@@ -8,42 +8,33 @@ import Lamdera
 import Set exposing (Set)
 import Time
 import Url exposing (Url)
+import User exposing (User, UserId)
 
 
 type alias FrontendModel =
     { key : Nav.Key
-    , message : String
+    , user : Maybe User
     , authFlow : Auth.Common.Flow
     , authRedirectBaseUrl : Url
     }
 
 
-type Auth
-    = Basic
-    | Admin
-
-
-type alias User =
-    { name : String
-    }
-
-
-type alias UserId =
-    String
-
-
 type alias BackendModel =
-    { time : Time.Posix
+    { now : Time.Posix
     , users : Dict UserId User
-    , clients : Dict SessionId ( Maybe UserId, Dict ClientId Time.Posix )
+    , sessions : Dict SessionId ( AuthStatus, Dict ClientId Time.Posix )
     , pendingAuths : Dict Lamdera.SessionId Auth.Common.PendingAuth
     }
+
+
+type AuthStatus
+    = LoggedOut
+    | LoggedIn Auth.Common.MethodId Time.Posix (Maybe Auth.Common.Token) UserId
 
 
 type FrontendMsg
     = UrlClicked Browser.UrlRequest
     | UrlChanged Url
-    | NoOpFrontendMsg
     | AuthFrontendMsg Auth.Common.FrontendMsg
 
 
@@ -53,13 +44,12 @@ type ToBackend
 
 
 type BackendMsg
-    = NoOpBackendMsg
-    | Tick Time.Posix
+    = Tick Time.Posix
     | ClientConnect Lamdera.SessionId Lamdera.ClientId
     | ClientDisconnect Lamdera.SessionId Lamdera.ClientId
     | AuthBackendMsg Auth.Common.BackendMsg
 
 
 type ToFrontend
-    = NoOpToFrontend
+    = AuthSuccess User
     | AuthToFrontend Auth.Common.ToFrontend
