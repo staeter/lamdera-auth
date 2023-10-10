@@ -20,7 +20,7 @@ type Auth
 
 infoToId : Auth.Common.UserInfo -> UserId
 infoToId userInfo =
-    userInfo.email ++ "::" ++ userInfo.name ++ "::" ++ userInfo.username
+    userInfo.email
 
 
 init : Auth.Common.UserInfo -> User

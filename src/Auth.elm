@@ -1,15 +1,15 @@
 module Auth exposing (..)
 
-import Auth.Common
-import Auth.Method.EmailMagicLink
-import Auth.Method.OAuthGithub
-import Auth.Method.OAuthGoogle
-import Types exposing (..)
+import Auth.Common exposing (MethodId)
 import Auth.Flow
-import Lamdera
-import Env
+import Auth.Method.OAuthGoogle
 import Dict
+import Env
+import Lamdera exposing (ClientId, SessionId)
+import Time
+import Types exposing (..)
 import User
+
 
 config : Auth.Common.Config FrontendMsg ToBackend BackendMsg ToFrontend FrontendModel BackendModel
 config =
@@ -18,51 +18,54 @@ config =
     , backendMsg = AuthBackendMsg
     , sendToFrontend = Lamdera.sendToFrontend
     , sendToBackend = Lamdera.sendToBackend
-    , methods = [ GoogleAuthMethod ]
+    , methods = [ googleAuthMethod ]
+    , renewSession = refreshAuth
     }
 
 
-backendConfig :
-    BackendModel
-    -> (Auth.Common.SessionId
-        -> Auth.Common.ClientId
-        -> Auth.Common.UserInfo
-        -> MethodId
-        -> Maybe Auth.Common.Token
-        -> Time.Posix
-        -> BackendModel
-        -> (BackendModel, Cmd BackendMsg)
-    )
-    ->
-    -> Auth.Flow.BackendUpdateConfig FrontendMsg BackendMsg ToFrontend FrontendModel BackendModel
-backendConfig model handleAuthSuccess =
+backendConfig : BackendModel -> Auth.Flow.BackendUpdateConfig FrontendMsg BackendMsg ToFrontend FrontendModel BackendModel
+backendConfig model =
     { asToFrontend = AuthToFrontend
     , asBackendMsg = AuthBackendMsg
     , sendToFrontend = Lamdera.sendToFrontend
     , backendModel = model
     , loadMethod =
-        \ methodId ->
-            if methodId == "OAuthGoogle"
-            then Just GoogleAuthMethod
-            else Nothing
-    , handleAuthSuccess = (handleAuthSuccess model)
-    , renewSession = renewSession
-    , logout = logout
+        \methodId ->
+            if methodId == googleAuthMethodId then
+                Just googleAuthMethod
+
+            else
+                Nothing
+    , handleAuthSuccess = handleAuthSuccess model
+    , renewSession = refreshAuth
+    , logout = refreshAuth
     , isDev = Env.mode == Env.Development
     }
+
+
+googleAuthMethod : Auth.Common.Method FrontendMsg BackendMsg FrontendModel BackendModel
+googleAuthMethod =
+    Auth.Method.OAuthGoogle.configuration
+        Env.googleAppClientId
+        Env.googleAppClientSecret
+
+googleAuthMethodId : Auth.Common.MethodId
+googleAuthMethodId = "OAuthGoogle"
 
 handleAuthSuccess :
     BackendModel
     -> Auth.Common.SessionId
-        -> Auth.Common.ClientId
-        -> Auth.Common.UserInfo
-        -> MethodId
-        -> Maybe Auth.Common.Token
-        -> Time.Posix
-        -> (BackendModel, Cmd BackendMsg)
-handleAuthSuccess sessionId clientId userInfo methodId token now model =
+    -> Auth.Common.ClientId
+    -> Auth.Common.UserInfo
+    -> MethodId
+    -> Maybe Auth.Common.Token
+    -> Time.Posix
+    -> ( BackendModel, Cmd BackendMsg )
+handleAuthSuccess model sessionId clientId userInfo methodId token now =
     let
-        userId = User.infoToId userInfo
+        userId =
+            User.infoToId userInfo
+
         clientDict =
             Dict.get sessionId model.sessions
                 |> Maybe.map Tuple.second
@@ -74,42 +77,54 @@ handleAuthSuccess sessionId clientId userInfo methodId token now model =
         newClientDict =
             Dict.insert clientId now clientDict
     in
-    ({model
-    | sessions =
-        Dict.insert
-            sessionId
-            (newAuthStatus, newClientDict)
-            model.sessions
-    , users =
-        if Dict.member userId model.users
-        then model.users
-        else Dict.insert userId (User.init userInfo) model.users
-    }
-    , Dict.toList newClientDict
-        |> List.map (\(clientId,_) -> AuthSuccess >> Lamdera.sendToFrontend clientId)
-        |> Cmd.batch
+    ( { model
+        | sessions =
+            Dict.insert
+                sessionId
+                ( newAuthStatus, newClientDict )
+                model.sessions
+        , users =
+            if Dict.member userId model.users then
+                model.users
+
+            else
+                Dict.insert userId (User.init userInfo) model.users
+      }
+    , sendAuthToWholeSession sessionId model
     )
 
-renewSession : String -> String -> BackendModel -> ( BackendModel, Cmd BackendMsg )
-renewSession sessionId clientId model =
+
+sendAuthToWholeSession : SessionId -> BackendModel -> Cmd BackendMsg
+sendAuthToWholeSession sessionId model =
     case Dict.get sessionId model.sessions of
-        Just (authStatus, clientDict) ->
-            -- A session already existed, renew it
-            case model.users |> Dict.get session.username of
-                Just user ->
-                    ( model
-                    , Data.User.sendAuthSuccessWithAccount (Effect.Lamdera.sessionIdFromString sessionId) user session model |> toCmd
-                    )
-
-                Nothing ->
-                    -- The session is for a user that doesn't exist, remove and force re-auth
-                    ( { model | sessions = sessionId |> removeSession model }
-                    , forceUserToLoginAgain sessionId Auth.Common.AuthSessionExpired
-                    )
-
         Nothing ->
-            -- No session exists, user is not logged in.
-            ( model, forceUserToLoginAgain sessionId Auth.Common.AuthSessionMissing )
+            Cmd.none
 
-GoogleAuthMethod =
-    Auth.Method.OAuthGoogle.configuration Env.googleAppClientId Env.googleAppClientSecret
+        Just ( LoggedIn _ _ _ userId, _ ) ->
+            case Dict.get userId model.users of
+                Nothing ->
+                    Cmd.none
+
+                Just user ->
+                    Lamdera.sendToFrontend sessionId (LogIn user)
+
+        Just ( LoggedOut, _ ) ->
+            Lamdera.sendToFrontend sessionId LogOut
+
+
+refreshAuth : SessionId -> ClientId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
+refreshAuth sessionId _ model =
+    sendAuthToWholeSession sessionId model
+        |> Tuple.pair model
+
+
+updateFromBackend authToFrontendMsg model =
+    case authToFrontendMsg of
+        Auth.Common.AuthInitiateSignin url ->
+            Auth.Flow.startProviderSignin url model
+
+        Auth.Common.AuthError err ->
+            Auth.Flow.setError model err
+
+        Auth.Common.AuthSessionChallenge reason ->
+            Debug.todo "Auth.Common.AuthSessionChallenge"

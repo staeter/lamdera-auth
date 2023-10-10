@@ -1,10 +1,15 @@
 module Frontend exposing (..)
 
+import Auth
+import Auth.Common
+import Auth.Flow
 import Browser exposing (UrlRequest(..))
 import Browser.Navigation as Nav
 import Html
 import Html.Attributes as Attr
+import Html.Events
 import Lamdera
+import Tuple.Extra
 import Types exposing (..)
 import Url
 
@@ -26,12 +31,13 @@ app =
 
 
 init : Url.Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
-init url key =
-    ( { key = key
-      , message = "Welcome to Lamdera! You're looking at the auto-generated base implementation. Check out src/Frontend.elm to start coding!"
-      }
-    , Cmd.none
-    )
+init url nav =
+    { nav = nav
+    , user = Nothing
+    , authFlow = Auth.Common.Idle
+    , authRedirectBaseUrl = { url | query = Nothing, fragment = Nothing }
+    }
+        |> Tuple.Extra.pairWith Cmd.none
 
 
 update : FrontendMsg -> Model -> ( Model, Cmd FrontendMsg )
@@ -41,7 +47,7 @@ update msg model =
             case urlRequest of
                 Internal url ->
                     ( model
-                    , Nav.pushUrl model.key (Url.toString url)
+                    , Nav.pushUrl model.nav (Url.toString url)
                     )
 
                 External url ->
@@ -52,21 +58,24 @@ update msg model =
         UrlChanged url ->
             ( model, Cmd.none )
 
-        NoOpFrontendMsg ->
-            ( model, Cmd.none )
-
-        AuthFrontendMsg authMsg ->
-            Auth.Flow.frontendMsg authMsg
+        RequestAuth ->
+            Auth.Flow.signInRequested Auth.googleAuthMethodId model Nothing
+                |> Tuple.mapSecond (AuthToBackend >> Lamdera.sendToBackend)
 
 
 updateFromBackend : ToFrontend -> Model -> ( Model, Cmd FrontendMsg )
 updateFromBackend msg model =
     case msg of
-        NoOpToFrontend ->
-            ( model, Cmd.none )
+        LogIn user ->
+            { model | user = Just user }
+                |> Tuple.Extra.pairWith Cmd.none
+
+        LogOut ->
+            { model | user = Nothing }
+                |> Tuple.Extra.pairWith Cmd.none
 
         AuthToFrontend authMsg ->
-            Auth.Flow.fromBackend authMsg
+            Auth.updateFromBackend authMsg model
 
 
 view : Model -> Browser.Document FrontendMsg
@@ -79,7 +88,7 @@ view model =
                 [ Attr.style "font-family" "sans-serif"
                 , Attr.style "padding-top" "40px"
                 ]
-                [ Html.text model.message ]
+                [ Html.button [Html.Events.onClick RequestAuth] [Html.text "Hello World!"]  ]
             ]
         ]
     }

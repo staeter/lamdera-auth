@@ -4,7 +4,7 @@ import Auth.Common
 import Browser
 import Browser.Navigation as Nav
 import Dict exposing (Dict)
-import Lamdera
+import Lamdera exposing (ClientId, SessionId)
 import Set exposing (Set)
 import Time
 import Url exposing (Url)
@@ -12,7 +12,7 @@ import User exposing (User, UserId)
 
 
 type alias FrontendModel =
-    { key : Nav.Key
+    { nav : Nav.Key
     , user : Maybe User
     , authFlow : Auth.Common.Flow
     , authRedirectBaseUrl : Url
@@ -35,12 +35,7 @@ type AuthStatus
 type FrontendMsg
     = UrlClicked Browser.UrlRequest
     | UrlChanged Url
-    | AuthFrontendMsg Auth.Common.FrontendMsg
-
-
-type ToBackend
-    = NoOpToBackend
-    | AuthToBackend Auth.Common.ToBackend
+    | RequestAuth
 
 
 type BackendMsg
@@ -49,7 +44,10 @@ type BackendMsg
     | ClientDisconnect Lamdera.SessionId Lamdera.ClientId
     | AuthBackendMsg Auth.Common.BackendMsg
 
+type ToBackend
+    = AuthToBackend Auth.Common.ToBackend
 
 type ToFrontend
-    = AuthSuccess User
+    = LogIn User
+    | LogOut
     | AuthToFrontend Auth.Common.ToFrontend
