@@ -11,7 +11,7 @@ import Html.Events
 import Lamdera
 import Tuple.Extra
 import Types exposing (..)
-import Url
+import Url exposing (Url)
 
 
 type alias Model =
@@ -30,12 +30,13 @@ app =
         }
 
 
-init : Url.Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
+init : Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
 init url nav =
     { nav = nav
     , user = Nothing
     , authFlow = Auth.Common.Idle
     , authRedirectBaseUrl = { url | query = Nothing, fragment = Nothing }
+    , authLogoutReturnUrlBase = { url | query = Nothing, fragment = Nothing }
     }
         |> Tuple.Extra.pairWith Cmd.none
 
@@ -58,24 +59,31 @@ update msg model =
         UrlChanged url ->
             ( model, Cmd.none )
 
-        RequestAuth ->
-            Auth.Flow.signInRequested Auth.googleAuthMethodId model Nothing
+        ClickLogIn ->
+            Auth.Flow.signInRequested Auth.authOMethodId model Nothing
                 |> Tuple.mapSecond (AuthToBackend >> Lamdera.sendToBackend)
+
+        ClickLogOut ->
+            let
+                (newModel, authFlowCmd) =
+                    Auth.Flow.signOutRequested ( (Auth.Common.Home {returnPath="/"})|> Just) [] model
+
+            in
+            ( {newModel | user = Nothing}
+            , Cmd.batch [authFlowCmd, Lamdera.sendToBackend RequestLogOut])
 
 
 updateFromBackend : ToFrontend -> Model -> ( Model, Cmd FrontendMsg )
 updateFromBackend msg model =
     case msg of
-        LogIn user ->
-            { model | user = Just user }
+        AuthUpdate maybeUser ->
+            { model | user = maybeUser }
                 |> Tuple.Extra.pairWith Cmd.none
 
-        LogOut ->
-            { model | user = Nothing }
-                |> Tuple.Extra.pairWith Cmd.none
 
         AuthToFrontend authMsg ->
             Auth.updateFromBackend authMsg model
+
 
 
 view : Model -> Browser.Document FrontendMsg
@@ -88,7 +96,10 @@ view model =
                 [ Attr.style "font-family" "sans-serif"
                 , Attr.style "padding-top" "40px"
                 ]
-                [ Html.button [Html.Events.onClick RequestAuth] [Html.text "Hello World!"]  ]
+                [ Html.text ("Signed in as : " ++ (model.user |> Maybe.map (.info >> .email) |> Maybe.withDefault "None" ))
+                , Html.button [Html.Events.onClick ClickLogIn] [Html.text "LogIn"]
+                , Html.button [Html.Events.onClick ClickLogOut] [Html.text "LogOut"]
+                ]
             ]
         ]
     }

@@ -2,13 +2,13 @@ module Auth exposing (..)
 
 import Auth.Common exposing (MethodId)
 import Auth.Flow
-import Auth.Method.OAuthGoogle
+import Auth.Method.OAuthAuth0
 import Dict
-import Env
 import Lamdera exposing (ClientId, SessionId)
 import Time
 import Types exposing (..)
 import User
+import Env
 
 
 config : Auth.Common.Config FrontendMsg ToBackend BackendMsg ToFrontend FrontendModel BackendModel
@@ -18,7 +18,7 @@ config =
     , backendMsg = AuthBackendMsg
     , sendToFrontend = Lamdera.sendToFrontend
     , sendToBackend = Lamdera.sendToBackend
-    , methods = [ googleAuthMethod ]
+    , methods = [ authOMethod ]
     , renewSession = refreshAuth
     }
 
@@ -31,8 +31,8 @@ backendConfig model =
     , backendModel = model
     , loadMethod =
         \methodId ->
-            if methodId == googleAuthMethodId then
-                Just googleAuthMethod
+            if methodId == authOMethodId then
+                Just authOMethod
 
             else
                 Nothing
@@ -42,15 +42,17 @@ backendConfig model =
     , isDev = Env.mode == Env.Development
     }
 
+authOMethod : Auth.Common.Method FrontendMsg BackendMsg FrontendModel BackendModel
+authOMethod =
+    Auth.Method.OAuthAuth0.configuration
+        Env.authOClientId
+        Env.authOClientSecret
+        Env.authOAppTenant
 
-googleAuthMethod : Auth.Common.Method FrontendMsg BackendMsg FrontendModel BackendModel
-googleAuthMethod =
-    Auth.Method.OAuthGoogle.configuration
-        Env.googleAppClientId
-        Env.googleAppClientSecret
+authOMethodId : Auth.Common.MethodId
+authOMethodId =
+    "OAuthAuth0"
 
-googleAuthMethodId : Auth.Common.MethodId
-googleAuthMethodId = "OAuthGoogle"
 
 handleAuthSuccess :
     BackendModel
@@ -90,12 +92,12 @@ handleAuthSuccess model sessionId clientId userInfo methodId token now =
             else
                 Dict.insert userId (User.init userInfo) model.users
       }
-    , sendAuthToWholeSession sessionId model
+    , refreshFrontendAuth sessionId model
     )
 
 
-sendAuthToWholeSession : SessionId -> BackendModel -> Cmd BackendMsg
-sendAuthToWholeSession sessionId model =
+refreshFrontendAuth : SessionId -> BackendModel -> Cmd BackendMsg
+refreshFrontendAuth sessionId model =
     case Dict.get sessionId model.sessions of
         Nothing ->
             Cmd.none
@@ -106,15 +108,15 @@ sendAuthToWholeSession sessionId model =
                     Cmd.none
 
                 Just user ->
-                    Lamdera.sendToFrontend sessionId (LogIn user)
+                    Lamdera.sendToFrontend sessionId (AuthUpdate <| Just user)
 
         Just ( LoggedOut, _ ) ->
-            Lamdera.sendToFrontend sessionId LogOut
+            Lamdera.sendToFrontend sessionId (AuthUpdate Nothing)
 
 
 refreshAuth : SessionId -> ClientId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
 refreshAuth sessionId _ model =
-    sendAuthToWholeSession sessionId model
+    refreshFrontendAuth sessionId model
         |> Tuple.pair model
 
 

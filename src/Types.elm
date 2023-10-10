@@ -16,6 +16,7 @@ type alias FrontendModel =
     , user : Maybe User
     , authFlow : Auth.Common.Flow
     , authRedirectBaseUrl : Url
+    , authLogoutReturnUrlBase : Url
     }
 
 
@@ -35,19 +36,21 @@ type AuthStatus
 type FrontendMsg
     = UrlClicked Browser.UrlRequest
     | UrlChanged Url
-    | RequestAuth
+    | ClickLogIn
+    | ClickLogOut
 
 
 type BackendMsg
-    = Tick Time.Posix
+    = EveryMillisecond Time.Posix
+    | EveryMinute
     | ClientConnect Lamdera.SessionId Lamdera.ClientId
     | ClientDisconnect Lamdera.SessionId Lamdera.ClientId
     | AuthBackendMsg Auth.Common.BackendMsg
 
 type ToBackend
     = AuthToBackend Auth.Common.ToBackend
+    | RequestLogOut
 
 type ToFrontend
-    = LogIn User
-    | LogOut
+    = AuthUpdate (Maybe User)
     | AuthToFrontend Auth.Common.ToFrontend

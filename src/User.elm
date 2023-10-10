@@ -9,11 +9,11 @@ type alias UserId =
 
 type alias User =
     { info : Auth.Common.UserInfo
-    , auth : Auth
+    , role : Role
     }
 
 
-type Auth
+type Role
     = Basic
     | Admin
 
@@ -26,5 +26,5 @@ infoToId userInfo =
 init : Auth.Common.UserInfo -> User
 init userInfo =
     { info = userInfo
-    , auth = Basic
+    , role = Basic
     }
