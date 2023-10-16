@@ -10,13 +10,11 @@ import Time
 import Url exposing (Url)
 import User exposing (User, UserId)
 
-
 type alias FrontendModel =
     { nav : Nav.Key
     , user : Maybe User
     , authFlow : Auth.Common.Flow
     , authRedirectBaseUrl : Url
-    , authLogoutReturnUrlBase : Url
     }
 
 

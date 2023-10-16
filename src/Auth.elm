@@ -9,7 +9,9 @@ import Time
 import Types exposing (..)
 import User
 import Env
-
+import Url exposing (Url)
+import Url.Parser exposing ((</>), (<?>))
+import Url.Parser.Query
 
 config : Auth.Common.Config FrontendMsg ToBackend BackendMsg ToFrontend FrontendModel BackendModel
 config =
@@ -65,6 +67,7 @@ handleAuthSuccess :
     -> ( BackendModel, Cmd BackendMsg )
 handleAuthSuccess model sessionId clientId userInfo methodId token now =
     let
+        t = Debug.log "auth" "handleAuthSuccess"
         userId =
             User.infoToId userInfo
 
@@ -78,21 +81,24 @@ handleAuthSuccess model sessionId clientId userInfo methodId token now =
 
         newClientDict =
             Dict.insert clientId now clientDict
-    in
-    ( { model
-        | sessions =
-            Dict.insert
-                sessionId
-                ( newAuthStatus, newClientDict )
-                model.sessions
-        , users =
-            if Dict.member userId model.users then
-                model.users
 
-            else
-                Dict.insert userId (User.init userInfo) model.users
-      }
-    , refreshFrontendAuth sessionId model
+        newModel =
+            { model
+                | sessions =
+                    Dict.insert
+                        sessionId
+                        ( newAuthStatus, newClientDict )
+                        model.sessions
+                , users =
+                    if Dict.member userId model.users then
+                        model.users
+
+                    else
+                        Dict.insert userId (User.init userInfo) model.users
+            }
+    in
+    ( newModel
+    , refreshFrontendAuth sessionId newModel
     )
 
 
@@ -116,6 +122,9 @@ refreshFrontendAuth sessionId model =
 
 refreshAuth : SessionId -> ClientId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
 refreshAuth sessionId _ model =
+    let
+        t = Debug.log "auth" "refreshAuth"
+    in
     refreshFrontendAuth sessionId model
         |> Tuple.pair model
 
@@ -130,3 +139,37 @@ updateFromBackend authToFrontendMsg model =
 
         Auth.Common.AuthSessionChallenge reason ->
             Debug.todo "Auth.Common.AuthSessionChallenge"
+
+-- callback
+
+type CallbackRoute
+    = LogInCallback Auth.Common.MethodId {code : Maybe String, state : Maybe String}
+
+handleCallback : Url -> FrontendModel -> (FrontendModel, Cmd FrontendMsg)
+handleCallback url model =
+    let
+        callbackRouteParser =
+            Url.Parser.oneOf
+                [ Url.Parser.map
+                    (\ method code state ->
+                        LogInCallback method {code = code , state = state}
+                    )
+                    ( Url.Parser.s "login"
+                    </> Url.Parser.string
+                    </> Url.Parser.s "callback"
+                    <?> Url.Parser.Query.string "code"
+                    <?> Url.Parser.Query.string "state"
+                    )
+                ]
+    in
+    case Url.Parser.parse callbackRouteParser url of
+        Nothing ->
+            (model, Cmd.none)
+
+        Just (LogInCallback method _) ->
+            Auth.Flow.init
+                model
+                method
+                url
+                model.nav
+                (AuthToBackend >> Lamdera.sendToBackend)

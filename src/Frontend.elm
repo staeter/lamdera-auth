@@ -13,7 +13,6 @@ import Tuple.Extra
 import Types exposing (..)
 import Url exposing (Url)
 
-
 type alias Model =
     FrontendModel
 
@@ -35,10 +34,9 @@ init url nav =
     { nav = nav
     , user = Nothing
     , authFlow = Auth.Common.Idle
-    , authRedirectBaseUrl = { url | query = Nothing, fragment = Nothing }
-    , authLogoutReturnUrlBase = { url | query = Nothing, fragment = Nothing }
+    , authRedirectBaseUrl = { url | path = "", query = Nothing, fragment = Nothing }
     }
-        |> Tuple.Extra.pairWith Cmd.none
+        |> Auth.handleCallback url
 
 
 update : FrontendMsg -> Model -> ( Model, Cmd FrontendMsg )
@@ -47,8 +45,15 @@ update msg model =
         UrlClicked urlRequest ->
             case urlRequest of
                 Internal url ->
-                    ( model
-                    , Nav.pushUrl model.nav (Url.toString url)
+                    let
+                        (newModel, authCmd) =
+                            Auth.handleCallback (Debug.log "clicked" url) model
+                    in
+                    ( newModel
+                    , Cmd.batch
+                        [ Nav.pushUrl model.nav (Url.toString url)
+                        , authCmd
+                        ]
                     )
 
                 External url ->
@@ -56,21 +61,17 @@ update msg model =
                     , Nav.load url
                     )
 
-        UrlChanged url ->
-            ( model, Cmd.none )
+        UrlChanged _ ->
+            ( model , Cmd.none)
 
         ClickLogIn ->
             Auth.Flow.signInRequested Auth.authOMethodId model Nothing
                 |> Tuple.mapSecond (AuthToBackend >> Lamdera.sendToBackend)
 
         ClickLogOut ->
-            let
-                (newModel, authFlowCmd) =
-                    Auth.Flow.signOutRequested ( (Auth.Common.Home {returnPath="/"})|> Just) [] model
-
-            in
-            ( {newModel | user = Nothing}
-            , Cmd.batch [authFlowCmd, Lamdera.sendToBackend RequestLogOut])
+            ( { model | authFlow = Auth.Common.Idle, user = Nothing }
+            , Lamdera.sendToBackend RequestLogOut
+            )
 
 
 updateFromBackend : ToFrontend -> Model -> ( Model, Cmd FrontendMsg )
