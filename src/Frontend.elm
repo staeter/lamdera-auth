@@ -16,6 +16,8 @@ import Url exposing (Url)
 type alias Model =
     FrontendModel
 
+type alias Msg =
+    FrontendMsg
 
 app =
     Lamdera.frontend
@@ -29,7 +31,7 @@ app =
         }
 
 
-init : Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
+init : Url -> Nav.Key -> ( Model, Cmd Msg )
 init url nav =
     { nav = nav
     , user = Nothing
@@ -39,7 +41,7 @@ init url nav =
         |> Auth.handleCallback url
 
 
-update : FrontendMsg -> Model -> ( Model, Cmd FrontendMsg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         UrlClicked urlRequest ->
@@ -47,7 +49,7 @@ update msg model =
                 Internal url ->
                     let
                         (newModel, authCmd) =
-                            Auth.handleCallback (Debug.log "clicked" url) model
+                            Auth.handleCallback url model
                     in
                     ( newModel
                     , Cmd.batch
@@ -74,7 +76,7 @@ update msg model =
             )
 
 
-updateFromBackend : ToFrontend -> Model -> ( Model, Cmd FrontendMsg )
+updateFromBackend : ToFrontend -> Model -> ( Model, Cmd Msg )
 updateFromBackend msg model =
     case msg of
         AuthUpdate maybeUser ->
@@ -87,7 +89,7 @@ updateFromBackend msg model =
 
 
 
-view : Model -> Browser.Document FrontendMsg
+view : Model -> Browser.Document Msg
 view model =
     { title = ""
     , body =

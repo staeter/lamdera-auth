@@ -67,7 +67,6 @@ handleAuthSuccess :
     -> ( BackendModel, Cmd BackendMsg )
 handleAuthSuccess model sessionId clientId userInfo methodId token now =
     let
-        t = Debug.log "auth" "handleAuthSuccess"
         userId =
             User.infoToId userInfo
 
@@ -122,9 +121,6 @@ refreshFrontendAuth sessionId model =
 
 refreshAuth : SessionId -> ClientId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
 refreshAuth sessionId _ model =
-    let
-        t = Debug.log "auth" "refreshAuth"
-    in
     refreshFrontendAuth sessionId model
         |> Tuple.pair model
 

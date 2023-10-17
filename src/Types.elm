@@ -10,6 +10,9 @@ import Time
 import Url exposing (Url)
 import User exposing (User, UserId)
 
+
+-- Models
+
 type alias FrontendModel =
     { nav : Nav.Key
     , user : Maybe User
@@ -19,17 +22,13 @@ type alias FrontendModel =
 
 
 type alias BackendModel =
-    { now : Time.Posix
-    , users : Dict UserId User
+    { users : Dict UserId User
     , sessions : Dict SessionId ( AuthStatus, Dict ClientId Time.Posix )
     , pendingAuths : Dict Lamdera.SessionId Auth.Common.PendingAuth
     }
 
 
-type AuthStatus
-    = LoggedOut
-    | LoggedIn Auth.Common.MethodId Time.Posix (Maybe Auth.Common.Token) UserId
-
+-- Msgs
 
 type FrontendMsg
     = UrlClicked Browser.UrlRequest
@@ -39,11 +38,13 @@ type FrontendMsg
 
 
 type BackendMsg
-    = EveryMillisecond Time.Posix
-    | EveryMinute
-    | ClientConnect Lamdera.SessionId Lamdera.ClientId
+    = EveryMinute Time.Posix
+    | ClientConnect Time Lamdera.SessionId Lamdera.ClientId
     | ClientDisconnect Lamdera.SessionId Lamdera.ClientId
     | AuthBackendMsg Auth.Common.BackendMsg
+
+
+-- Pipe
 
 type ToBackend
     = AuthToBackend Auth.Common.ToBackend
@@ -52,3 +53,14 @@ type ToBackend
 type ToFrontend
     = AuthUpdate (Maybe User)
     | AuthToFrontend Auth.Common.ToFrontend
+
+
+-- Util
+
+type AuthStatus
+    = LoggedOut
+    | LoggedIn Auth.Common.MethodId Time.Posix (Maybe Auth.Common.Token) UserId
+
+type Time
+    = PerformTimeTask
+    | ReceivedTime Time.Posix

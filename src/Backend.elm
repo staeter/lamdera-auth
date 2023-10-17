@@ -8,10 +8,13 @@ import Time
 import Tuple.Extra
 import Types exposing (..)
 import Env
-
+import Task
 
 type alias Model =
     BackendModel
+
+type alias Msg =
+    BackendMsg
 
 
 app =
@@ -23,21 +26,19 @@ app =
         }
 
 
-subscriptions : Model -> Sub BackendMsg
+subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ Lamdera.onConnect ClientConnect
+        [ Lamdera.onConnect (ClientConnect PerformTimeTask)
         , Lamdera.onDisconnect ClientDisconnect
-        , Time.every 1 EveryMillisecond
-        , Time.every (60*1000) (always EveryMinute)
+        , Time.every (60*1000) EveryMinute
         ]
 
 
 
-init : ( Model, Cmd BackendMsg )
+init : ( Model, Cmd Msg )
 init =
-    ( { now = Time.millisToPosix 0
-      , users = Dict.empty
+    ( { users = Dict.empty
       , sessions = Dict.empty
       , pendingAuths = Dict.empty
       }
@@ -45,37 +46,22 @@ init =
     )
 
 
-update : BackendMsg -> Model -> ( Model, Cmd BackendMsg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        EveryMillisecond now ->
-            ( { model | now = now }, Cmd.none )
+        EveryMinute now ->
+            (logoutExpiredAuths now model, Cmd.none)
 
-        EveryMinute ->
-            (logoutExpiredAuths model, Cmd.none)
+        ClientConnect time sessionId clientId ->
+            case time of
+                PerformTimeTask ->
+                    Time.now
+                    |> Task.perform (\t -> ClientConnect (ReceivedTime t) sessionId clientId)
+                    |> Tuple.pair model
 
-        ClientConnect sessionId clientId ->
-            let
-                ( authStatus, clientDict ) =
-                    case Dict.get sessionId model.sessions of
-                        Nothing ->
-                            ( LoggedOut, Dict.singleton clientId model.now )
+                ReceivedTime now ->
+                    clientConnect sessionId clientId now model
 
-                        Just ( authSt, cliDict ) ->
-                            ( authSt, Dict.insert clientId model.now cliDict )
-
-                cmd =
-                    case authStatus of
-                        LoggedOut ->
-                            Cmd.none
-
-                        LoggedIn _ _ _ userId ->
-                            Dict.get userId model.users
-                                |> Maybe.map (\user -> Lamdera.sendToFrontend sessionId (AuthUpdate <| Just user))
-                                |> Maybe.withDefault Cmd.none
-            in
-            { model | sessions = Dict.insert sessionId ( authStatus, clientDict ) model.sessions }
-                |> Tuple.Extra.pairWith cmd
 
         ClientDisconnect sessionId clientId ->
             Dict.update
@@ -91,9 +77,32 @@ update msg model =
         AuthBackendMsg authMsg ->
             Auth.Flow.backendUpdate (Auth.backendConfig model) authMsg
 
+clientConnect : Lamdera.SessionId -> Lamdera.ClientId -> Time.Posix -> Model -> (Model, Cmd Msg)
+clientConnect sessionId clientId now model =
+    let
+        ( authStatus, clientDict ) =
+            case Dict.get sessionId model.sessions of
+                Nothing ->
+                    ( LoggedOut, Dict.singleton clientId now )
 
-logoutExpiredAuths : Model -> Model
-logoutExpiredAuths model =
+                Just ( authSt, cliDict ) ->
+                    ( authSt, Dict.insert clientId now cliDict )
+
+        cmd =
+            case authStatus of
+                LoggedOut ->
+                    Cmd.none
+
+                LoggedIn _ _ _ userId ->
+                    Dict.get userId model.users
+                        |> Maybe.map (\user -> Lamdera.sendToFrontend sessionId (AuthUpdate <| Just user))
+                        |> Maybe.withDefault Cmd.none
+    in
+    { model | sessions = Dict.insert sessionId ( authStatus, clientDict ) model.sessions }
+        |> Tuple.Extra.pairWith cmd
+
+logoutExpiredAuths : Time.Posix -> Model -> Model
+logoutExpiredAuths now model =
     { model
     | sessions =
         Dict.map
@@ -103,7 +112,7 @@ logoutExpiredAuths model =
                         (LoggedOut, d)
 
                     LoggedIn _ loginTime _ _ ->
-                        if Time.posixToMillis model.now >= Time.posixToMillis loginTime + (Env.authOIdTokenExpiration * 1000)
+                        if Time.posixToMillis now >= Time.posixToMillis loginTime + (Env.authOIdTokenExpiration * 1000)
                         then
                             (LoggedOut, d)
                         else
@@ -114,7 +123,7 @@ logoutExpiredAuths model =
     }
 
 
-updateFromFrontend : SessionId -> ClientId -> ToBackend -> Model -> ( Model, Cmd BackendMsg )
+updateFromFrontend : SessionId -> ClientId -> ToBackend -> Model -> ( Model, Cmd Msg )
 updateFromFrontend sessionId clientId msg model =
     case msg of
         AuthToBackend authMsg ->
